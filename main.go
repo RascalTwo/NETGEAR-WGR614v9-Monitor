@@ -65,12 +65,12 @@ func parseHTML(html string) (Data, error) {
 		Received   IOInfo
 		Collisions int16
 	}{}
-	for i := 5; i < len(rows); i++ {
-		cells := strings.Split(rows[i], "<td")
+	for _, row := range rows[5:] {
+		cells := strings.Split(row, "<td")
 		values := make([]string, 0)
-		for j := 1; j < len(cells); j++ {
-			rawCell := strings.SplitN(strings.Split(cells[j], "</td")[0], ">", 2)[1]
-			cell := strings.Split(strings.Split(rawCell, ">")[1], "</span")[0]
+		for _, cell := range cells[1:] {
+			rawCell := strings.SplitN(strings.Split(cell, "</td")[0], ">", 2)[1]
+			cell := strings.Trim(strings.Split(strings.Split(rawCell, ">")[1], "</span")[0], " ")
 			values = append(values, cell)
 		}
 		if len(values) == 8 {
@@ -101,7 +101,11 @@ func parseHTML(html string) (Data, error) {
 			}
 		}
 
-		data.Interfaces[values[0]] = Row{values[1], lastBand.Transfered, lastBand.Received, lastBand.Collisions, values[len(values)-1]}
+		uptime := values[len(values)-1]
+		if uptime == "--" {
+			uptime = ""
+		}
+		data.Interfaces[values[0]] = Row{values[1], lastBand.Transfered, lastBand.Received, lastBand.Collisions, uptime}
 	}
 
 	return data, nil
