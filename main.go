@@ -2,15 +2,15 @@ package main
 
 import (
 	"encoding/base64"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/davecgh/go-spew/spew"
 )
 
 // IOInfo - Packet count and reported speed of IO
@@ -35,6 +35,14 @@ type Data struct {
 	Interfaces map[string]Row
 }
 
+func findAllSubmatchGroups(str string, target string, groupIndex int) []string {
+	results := make([]string, 0)
+	for _, v := range regexp.MustCompile(str).FindAllStringSubmatch(target, -1) {
+		results = append(results, v[groupIndex])
+	}
+	return results
+}
+
 func fetchHTML(hostpath string, username string, password string) ([]byte, error) {
 	client := &http.Client{}
 
@@ -57,47 +65,38 @@ func fetchHTML(hostpath string, username string, password string) ([]byte, error
 func parseHTML(html string) (Data, error) {
 	data := Data{When: time.Now(), Interfaces: make(map[string]Row)}
 
-	rows := strings.Split(html, "<tr>")
-	data.Uptime = strings.Trim(strings.Split(rows[2], "<!>")[1], " ")
+	rows := findAllSubmatchGroups(`(?s)<tr>(.*?)</tr>`, html, 1)
+	data.Uptime = regexp.MustCompile(`(?s)<!>\s*(.*?)\s*?<!>`).FindStringSubmatch(rows[1])[1]
 
-	lastBand := struct {
+	lastIO := struct {
 		Transfered IOInfo
 		Received   IOInfo
 		Collisions int16
 	}{}
-	for _, row := range rows[5:] {
-		cells := strings.Split(row, "<td")
-		values := make([]string, 0)
-		for _, cell := range cells[1:] {
-			rawCell := strings.SplitN(strings.Split(cell, "</td")[0], ">", 2)[1]
-			cell := strings.Trim(strings.Split(strings.Split(rawCell, ">")[1], "</span")[0], " ")
-			values = append(values, cell)
-		}
+	for _, row := range rows[4:] {
+		values := findAllSubmatchGroups(`(?s)<td.*?>.*?<span.*?>(.*?)</span>`, row, 1)
 		if len(values) == 8 {
 			value, _ := strconv.ParseInt(values[2], 10, 32)
 			transInt := int32(value)
 			value, _ = strconv.ParseInt(values[5], 10, 32)
-			trans := IOInfo{transInt, int32(value)}
+			lastIO.Transfered = IOInfo{transInt, int32(value)}
 
 			value, _ = strconv.ParseInt(values[3], 10, 32)
 			recvInt := int32(value)
 			value, _ = strconv.ParseInt(values[6], 10, 32)
-			recv := IOInfo{recvInt, int32(value)}
+			lastIO.Received = IOInfo{recvInt, int32(value)}
 
 			value, _ = strconv.ParseInt(values[4], 10, 16)
-			collisions := int16(value)
+			lastIO.Collisions = int16(value)
 
 			// TODO - Don't ignore errors
 
-			lastBand.Transfered = trans
-			lastBand.Received = recv
-			lastBand.Collisions = collisions
 			if strings.Contains(values[0], "LAN") {
-				lastBand.Transfered.Count /= 4
-				lastBand.Transfered.Speed /= 4
-				lastBand.Received.Count /= 4
-				lastBand.Received.Speed /= 4
-				lastBand.Collisions /= 4
+				lastIO.Transfered.Count /= 4
+				lastIO.Transfered.Speed /= 4
+				lastIO.Received.Count /= 4
+				lastIO.Received.Speed /= 4
+				lastIO.Collisions /= 4
 			}
 		}
 
@@ -105,7 +104,7 @@ func parseHTML(html string) (Data, error) {
 		if uptime == "--" {
 			uptime = ""
 		}
-		data.Interfaces[values[0]] = Row{values[1], lastBand.Transfered, lastBand.Received, lastBand.Collisions, uptime}
+		data.Interfaces[values[0]] = Row{values[1], lastIO.Transfered, lastIO.Received, lastIO.Collisions, uptime}
 	}
 
 	return data, nil
@@ -133,15 +132,29 @@ func cacheOrFetch(filename string, fetch func() ([]byte, error)) (string, error)
 	return string(bytes), nil
 }
 
-func main() {
-	fetchAuthedHTML := func() ([]byte, error) {
-		return fetchHTML("http://10.0.0.1/", "admin", "drowssap")
-	}
-	html, err := cacheOrFetch("tableout.html", fetchAuthedHTML)
-	if err != nil {
-		log.Fatal(err)
-	}
+func collectData(rate <-chan time.Time) {
+	for range rate {
+		html, err := cacheOrFetch("tableout.html", func() ([]byte, error) {
+			return fetchHTML("http://10.0.0.1/", "admin", "drowssap")
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	data, _ := parseHTML(html)
-	spew.Dump(data)
+		data, _ := parseHTML(html)
+		allData[data.When] = data
+		fmt.Println(data.When)
+		fmt.Println(data)
+	}
+}
+
+var allData = make(map[time.Time]Data)
+
+func main() {
+	rate := time.NewTicker(1 * time.Second)
+	go collectData(rate.C)
+
+	fmt.Scanln()
+	rate.Stop()
+	fmt.Scanln()
 }
