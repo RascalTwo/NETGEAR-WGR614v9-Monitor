@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -144,17 +145,28 @@ func collectData(rate <-chan time.Time) {
 		data, _ := parseHTML(html)
 		allData[data.When] = data
 		fmt.Println(data.When)
-		fmt.Println(data)
 	}
 }
 
 var allData = make(map[time.Time]Data)
 
+func api(w http.ResponseWriter, req *http.Request) {
+	bytes, _ := json.Marshal(allData)
+
+	fmt.Fprintf(w, string(bytes))
+}
+
 func main() {
 	rate := time.NewTicker(1 * time.Second)
 	go collectData(rate.C)
 
+	http.HandleFunc("/api", api)
+	go http.ListenAndServe(":5959", nil)
+
+	fmt.Println("Enter any key to stop data collection...")
 	fmt.Scanln()
 	rate.Stop()
+
+	fmt.Printf("Data collection halted.\nEnter any key to shutdown server and exit...")
 	fmt.Scanln()
 }
