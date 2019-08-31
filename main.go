@@ -5,36 +5,21 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/davecgh/go-spew/spew"
 )
 
-func basicAuth(username, password string) string {
-	auth := username + ":" + password
-	return base64.StdEncoding.EncodeToString([]byte(auth))
-}
-
-func fetch_html() string {
-	client := &http.Client{}
-
-	req, err := http.NewRequest("GET", "http://10.0.0.1/RST_stattbl.htm", nil)
-	req.Header.Add("Authorization", "Basic "+basicAuth("admin", "drowssap"))
-
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Fatal(err)
-	}
-	text, err := ioutil.ReadAll(resp.Body)
-	return string(text)
-}
-
+// IOInfo - Packet count and reported speed of IO
 type IOInfo struct {
 	Count int32
 	Speed int32
 }
 
+// Row - Single row of interface data
 type Row struct {
 	Status     string
 	Transfered IOInfo
@@ -43,25 +28,36 @@ type Row struct {
 	Uptime     string
 }
 
+// Data - Snapshot of all data
 type Data struct {
+	When       time.Time
 	Uptime     string
 	Interfaces map[string]Row
 }
 
-type Cell struct {
-	isHead bool
-	value  string
+func fetchHTML(hostpath string, username string, password string) ([]byte, error) {
+	client := &http.Client{}
+
+	req, err := http.NewRequest("GET", hostpath+"RST_stattbl.htm", nil)
+	req.Header.Add("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(username+":"+password)))
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	bytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return bytes, nil
 }
 
-func main() {
-	//html := fetch_html()
-	//fmt.Println(html)
-	//err := ioutil.WriteFile("tableout.html", []byte(html), 0644)
-	bytes, _ := ioutil.ReadFile("tableout.html")
+func parseHTML(html string) (Data, error) {
+	data := Data{When: time.Now(), Interfaces: make(map[string]Row)}
 
-	data := Data{Interfaces: make(map[string]Row)}
-
-	rows := strings.Split(string(bytes), "<tr>")
+	rows := strings.Split(html, "<tr>")
 	data.Uptime = strings.Trim(strings.Split(rows[2], "<!>")[1], " ")
 
 	lastBand := struct {
@@ -91,6 +87,8 @@ func main() {
 			value, _ = strconv.ParseInt(values[4], 10, 16)
 			collisions := int16(value)
 
+			// TODO - Don't ignore errors
+
 			lastBand.Transfered = trans
 			lastBand.Received = recv
 			lastBand.Collisions = collisions
@@ -106,6 +104,40 @@ func main() {
 		data.Interfaces[values[0]] = Row{values[1], lastBand.Transfered, lastBand.Received, lastBand.Collisions, values[len(values)-1]}
 	}
 
-	//fmt.Printf("%+v\n", data)
+	return data, nil
+}
+
+func cacheOrFetch(filename string, fetch func() ([]byte, error)) (string, error) {
+	if _, err := os.Stat(filename); os.IsExist(err) {
+		bytes, err := ioutil.ReadFile(filename)
+		if err != nil {
+			return "", err
+		}
+		return string(bytes), nil
+
+	}
+	bytes, err := fetch()
+	if err != nil {
+		return "", err
+	}
+
+	err = ioutil.WriteFile(filename, bytes, 0644)
+	if err != nil {
+		return "", err
+	}
+
+	return string(bytes), nil
+}
+
+func main() {
+	fetchAuthedHTML := func() ([]byte, error) {
+		return fetchHTML("http://10.0.0.1/", "admin", "drowssap")
+	}
+	html, err := cacheOrFetch("tableout.html", fetchAuthedHTML)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	data, _ := parseHTML(html)
 	spew.Dump(data)
 }
