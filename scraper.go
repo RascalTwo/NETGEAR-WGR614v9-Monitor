@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -16,24 +15,24 @@ import (
 
 // IOInfo - Packet count and reported speed of IO
 type IOInfo struct {
-	Count int32
-	Speed int32
+	Count int32 `json:"count"`
+	Speed int32 `json:"speed"`
 }
 
 // Row - Single row of interface data
 type Row struct {
-	Status     string
-	Transfered IOInfo
-	Received   IOInfo
-	Collisions int16
-	Uptime     string
+	Status      string `json:"status"`
+	Transmitted IOInfo `json:"transmitted"`
+	Received    IOInfo `json:"received"`
+	Collisions  int16  `json:"collisions"`
+	Uptime      string `json:"uptime"`
 }
 
 // Data - Snapshot of all data
 type Data struct {
-	When       time.Time
-	Uptime     string
-	Interfaces map[string]Row
+	When       time.Time      `json:"when"`
+	Uptime     string         `json:"uptime"`
+	Interfaces map[string]Row `json:"interfaces"`
 }
 
 func findAllSubmatchGroups(str string, target string, groupIndex int) []string {
@@ -70,17 +69,17 @@ func parseHTML(html string) (Data, error) {
 	data.Uptime = regexp.MustCompile(`(?s)<!>\s*(.*?)\s*?<!>`).FindStringSubmatch(rows[1])[1]
 
 	lastIO := struct {
-		Transfered IOInfo
-		Received   IOInfo
-		Collisions int16
+		Transmitted IOInfo
+		Received    IOInfo
+		Collisions  int16
 	}{}
-	for _, row := range rows[4:] {
+	for _, row := range rows[3:] {
 		values := findAllSubmatchGroups(`(?s)<td.*?>.*?<span.*?>(.*?)</span>`, row, 1)
 		if len(values) == 8 {
 			value, _ := strconv.ParseInt(values[2], 10, 32)
 			transInt := int32(value)
 			value, _ = strconv.ParseInt(values[5], 10, 32)
-			lastIO.Transfered = IOInfo{transInt, int32(value)}
+			lastIO.Transmitted = IOInfo{transInt, int32(value)}
 
 			value, _ = strconv.ParseInt(values[3], 10, 32)
 			recvInt := int32(value)
@@ -92,9 +91,9 @@ func parseHTML(html string) (Data, error) {
 
 			// TODO - Don't ignore errors
 
-			if strings.Contains(values[0], "LAN") {
-				lastIO.Transfered.Count /= 4
-				lastIO.Transfered.Speed /= 4
+			if strings.HasPrefix(values[0], "LAN") {
+				lastIO.Transmitted.Count /= 4
+				lastIO.Transmitted.Speed /= 4
 				lastIO.Received.Count /= 4
 				lastIO.Received.Speed /= 4
 				lastIO.Collisions /= 4
@@ -105,7 +104,7 @@ func parseHTML(html string) (Data, error) {
 		if uptime == "--" {
 			uptime = ""
 		}
-		data.Interfaces[values[0]] = Row{values[1], lastIO.Transfered, lastIO.Received, lastIO.Collisions, uptime}
+		data.Interfaces[values[0]] = Row{values[1], lastIO.Transmitted, lastIO.Received, lastIO.Collisions, uptime}
 	}
 
 	return data, nil
@@ -133,40 +132,22 @@ func cacheOrFetch(filename string, fetch func() ([]byte, error)) (string, error)
 	return string(bytes), nil
 }
 
-func collectData(rate <-chan time.Time) {
+func collectData(rate <-chan time.Time, provideData func(data Data), ip *string, username *string, password *string) {
 	for range rate {
-		html, err := cacheOrFetch("tableout.html", func() ([]byte, error) {
-			return fetchHTML("http://10.0.0.1/", "admin", "drowssap")
-		})
+		if *ip == "" || *username == "" || *password == "" {
+			continue
+		}
+		/*
+			html, err := cacheOrFetch("tableout.html", func() ([]byte, error) {
+				return fetchHTML("http://10.0.0.1/", username, password)
+			})
+		*/
+		bytes, err := fetchHTML(fmt.Sprintf("http://%s/", *ip), *username, *password)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		data, _ := parseHTML(html)
-		allData[data.When] = data
-		fmt.Println(data.When)
+		data, _ := parseHTML(string(bytes))
+		provideData(data)
 	}
-}
-
-var allData = make(map[time.Time]Data)
-
-func api(w http.ResponseWriter, req *http.Request) {
-	bytes, _ := json.Marshal(allData)
-
-	fmt.Fprintf(w, string(bytes))
-}
-
-func main() {
-	rate := time.NewTicker(1 * time.Second)
-	go collectData(rate.C)
-
-	http.HandleFunc("/api", api)
-	go http.ListenAndServe(":5959", nil)
-
-	fmt.Println("Enter any key to stop data collection...")
-	fmt.Scanln()
-	rate.Stop()
-
-	fmt.Printf("Data collection halted.\nEnter any key to shutdown server and exit...")
-	fmt.Scanln()
 }

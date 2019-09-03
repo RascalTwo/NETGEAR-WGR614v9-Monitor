@@ -1,0 +1,49 @@
+<html>
+	<head>
+		<title>Netgear WGR614v9 Bandwidth Monitor</title>
+		<style type="text/css">
+			form {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+			}
+
+				form button {
+					grid-column-start: 2;
+				}
+
+				form input, form button {
+					width: 90%;
+					margin: 0 auto;
+				}
+		</style>
+	</head>
+	<body>
+		<form>
+			<label for="ip">IP </label>
+			<input id="ip" name="ip" value="10.0.0.1">
+
+			<label for="username">Username </label>
+			<input id="username" name="username" value="admin">
+
+			<label for="password">Password </label>
+			<input id="password" name="password">
+
+			<label for="rate">Rate </label>
+			<input id="rate" type="number" min="0.1" step="0.1" value="1" name="rate" disabled>
+
+			<button type="submit">Set</button>
+		</form>
+		<table>
+			<tr>
+				<th>Interface</th>
+				<th>Received</th>
+				<th>Transmitted</th>
+				<th>Download</th>
+				<th>Upload</th>
+			</tr>
+			<tbody id="display-wrapper">
+			</tbody>
+		</table>
+		<script src="index.js"></script>
+	</body>
+</html>
