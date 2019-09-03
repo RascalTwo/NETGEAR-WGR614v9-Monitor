@@ -132,22 +132,20 @@ func cacheOrFetch(filename string, fetch func() ([]byte, error)) (string, error)
 	return string(bytes), nil
 }
 
-func collectData(rate <-chan time.Time, provideData func(data Data), ip *string, username *string, password *string) {
-	for range rate {
-		if *ip == "" || *username == "" || *password == "" {
-			continue
-		}
-		/*
-			html, err := cacheOrFetch("tableout.html", func() ([]byte, error) {
-				return fetchHTML("http://10.0.0.1/", username, password)
-			})
-		*/
-		bytes, err := fetchHTML(fmt.Sprintf("http://%s/", *ip), *username, *password)
-		if err != nil {
-			log.Fatal(err)
-		}
+func collectData(ticker *time.Ticker, provideData func(data Data), ip *string, username *string, password *string) {
+	for {
+		select {
+		case <-ticker.C:
+			if *ip == "" || *username == "" || *password == "" {
+				continue
+			}
+			bytes, err := fetchHTML(fmt.Sprintf("http://%s/", *ip), *username, *password)
+			if err != nil {
+				log.Fatal(err)
+			}
 
-		data, _ := parseHTML(string(bytes))
-		provideData(data)
+			data, _ := parseHTML(string(bytes))
+			provideData(data)
+		}
 	}
 }

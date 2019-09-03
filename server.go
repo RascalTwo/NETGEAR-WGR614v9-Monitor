@@ -18,6 +18,7 @@ var username = ""
 var password = ""
 var ip = ""
 var rate = int32(1000)
+var interval = *time.NewTicker(time.Duration(rate) * time.Millisecond)
 
 var latest = Data{}
 
@@ -56,15 +57,15 @@ func update(w http.ResponseWriter, req *http.Request) {
 	}
 	if data.Rate != -1 {
 		rate = data.Rate
-		// TODO - Update ticker with new rate
+		interval.Stop()
+		interval = *time.NewTicker(time.Duration(rate) * time.Millisecond)
 	}
 
 	sendJSON(w, true, "Things changed", UpdateRequest{ip, username, password, rate})
 }
 
 func main() {
-	rate := time.NewTicker(time.Duration(rate) * time.Millisecond)
-	go collectData(rate.C, func(data Data) {
+	go collectData(&interval, func(data Data) {
 		fmt.Println(data.When)
 		latest = data
 	}, &ip, &username, &password)
@@ -76,7 +77,7 @@ func main() {
 
 	fmt.Println("Enter any key to stop data collection...")
 	fmt.Scanln()
-	rate.Stop()
+	interval.Stop()
 
 	fmt.Printf("Data collection halted.\nEnter any key to shutdown server and exit...")
 	fmt.Scanln()
