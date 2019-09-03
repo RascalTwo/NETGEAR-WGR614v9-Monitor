@@ -29,8 +29,8 @@ const debug = (() => {
 			const transmittedDiff = ni.transmitted.count - pi.transmitted.count
 			yield {
 				interface: interfaceName,
-				received: [receivedDiff, receivedDiff * PACKET_SIZE_BYTES / rate],
-				transmitted: [transmittedDiff, transmittedDiff * PACKET_SIZE_BYTES / rate]
+				received: [receivedDiff, receivedDiff * PACKET_SIZE_BYTES / 1024],
+				transmitted: [transmittedDiff, transmittedDiff * PACKET_SIZE_BYTES / 1024]
 			}
 		}
 	}
@@ -51,9 +51,9 @@ const debug = (() => {
 			const [interfaceCell, recv, trans, dl, up ] = row.childNodes
 			interfaceCell.textContent = interface;
 			recv.textContent = received[0];
-			trans.textContent = transmitted[1]
-			dl.textContent = received[1];
-			up.textContent = transmitted[1];
+			trans.textContent = transmitted[0];
+			dl.textContent = received[1].toFixed(0);
+			up.textContent = transmitted[1].toFixed(0);
 		}
 	}
 
