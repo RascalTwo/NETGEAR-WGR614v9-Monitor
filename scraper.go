@@ -28,8 +28,8 @@ type Row struct {
 	Uptime      string `json:"uptime"`
 }
 
-// Data - Snapshot of all data
-type Data struct {
+// FullFrame - Snapshot of all data
+type FullFrame struct {
 	When       time.Time      `json:"when"`
 	Uptime     string         `json:"uptime"`
 	Interfaces map[string]Row `json:"interfaces"`
@@ -62,8 +62,8 @@ func fetchHTML(hostpath string, username string, password string) ([]byte, error
 	return bytes, nil
 }
 
-func parseHTML(html string) (Data, error) {
-	data := Data{When: time.Now(), Interfaces: make(map[string]Row)}
+func parseHTML(html string) (FullFrame, error) {
+	data := FullFrame{When: time.Now(), Interfaces: make(map[string]Row)}
 
 	rows := findAllSubmatchGroups(`(?s)<tr>(.*?)</tr>`, html, 1)
 	data.Uptime = regexp.MustCompile(`(?s)<!>\s*(.*?)\s*?<!>`).FindStringSubmatch(rows[1])[1]
@@ -100,6 +100,7 @@ func parseHTML(html string) (Data, error) {
 			}
 		}
 
+		// TODO - Ensure uptime and other fields are stripped
 		uptime := values[len(values)-1]
 		if uptime == "--" {
 			uptime = ""
@@ -132,7 +133,7 @@ func cacheOrFetch(filename string, fetch func() ([]byte, error)) (string, error)
 	return string(bytes), nil
 }
 
-func collectData(ticker *time.Ticker, provideData func(data Data), ip *string, username *string, password *string) {
+func collectData(ticker *time.Ticker, provideData func(data FullFrame), ip *string, username *string, password *string) {
 	for {
 		select {
 		case <-ticker.C:

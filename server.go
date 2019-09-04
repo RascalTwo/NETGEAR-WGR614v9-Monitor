@@ -9,9 +9,9 @@ import (
 
 // APIMessage are messages the server responds to clients with
 type APIMessage struct {
-	Success bool        `json:"success"`
-	Message string      `json:"message,omitempty"`
-	Data    interface{} `json:"data,omitempty"`
+	Success   bool        `json:"success"`
+	Message   string      `json:"message,omitempty"`
+	FullFrame interface{} `json:"data,omitempty"`
 }
 
 var username = ""
@@ -20,7 +20,7 @@ var ip = ""
 var rate = int32(1000)
 var interval = *time.NewTicker(time.Duration(rate) * time.Millisecond)
 
-var latest = Data{}
+var latest = FullFrame{}
 
 func sendJSON(w http.ResponseWriter, success bool, message string, data interface{}) {
 	bytes, _ := json.Marshal(APIMessage{success, message, data})
@@ -65,7 +65,7 @@ func update(w http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
-	go collectData(&interval, func(data Data) {
+	go collectData(&interval, func(data FullFrame) {
 		fmt.Println(data.When)
 		latest = data
 	}, &ip, &username, &password)
@@ -79,6 +79,6 @@ func main() {
 	fmt.Scanln()
 	interval.Stop()
 
-	fmt.Printf("Data collection halted.\nEnter any key to shutdown server and exit...")
+	fmt.Printf("FullFrame collection halted.\nEnter any key to shutdown server and exit...")
 	fmt.Scanln()
 }
