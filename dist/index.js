@@ -2,10 +2,11 @@
 const debug = (() => {
 	const PACKET_SIZE_BYTES = 1500;
 	const displayWrapper = document.querySelector('#display-wrapper');
+	const chart = document.querySelector('#chart');
 
-	const state = { rate: 1000, prev: null, now: null }
+	const state = { rate: 200, prev: null, curr: null, stepSize: 5 }
 
-	document.getElementsByTagName('form')[0].addEventListener('submit', e => {
+	document.querySelector('form').addEventListener('submit', e => {
 		e.preventDefault();
 		const data = Array.from(new FormData(document.forms[0]).entries())
 			.reduce((obj, [key, value]) => ({ ...obj, [key]: value }), {});
@@ -17,14 +18,26 @@ const debug = (() => {
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify(data)
 		}).then(r => r.json())
-			.then(console.log)
+			.then(({ success, message, data }) => {
+				state.rate = data.rate
+				clearInterval(pollInterval);
+				pollInterval = setInterval(poll, state.rate);
+				// TODO - Handle discrepancy in X axis caused by rate change
+			})
 			.catch(console.error);
+	});
+
+	document.querySelector('#halt-button').addEventListener('click', () => clearInterval(pollInterval));
+
+	document.querySelector('#step-size').addEventListener('change', (e) => {
+		chart.querySelector('#lines').innerHTML = '';
+		state.stepSize = parseInt(e.target.value);
 	})
 
-	function* calculateSpeed(rate, prev, now){
+	function* calculateSpeed(prev, curr){
 		for (const interfaceName in prev.interfaces){
 			const pi = prev.interfaces[interfaceName];
-			const ni = now.interfaces[interfaceName];
+			const ni = curr.interfaces[interfaceName];
 			const receivedDiff = ni.received.count - pi.received.count;
 			const transmittedDiff = ni.transmitted.count - pi.transmitted.count
 			yield {
@@ -36,7 +49,9 @@ const debug = (() => {
 	}
 
 	function updateDisplay(){
-		const speeds = Array.from(calculateSpeed(state.rate, state.prev, state.now)).reduce((obj, speed) => ({ ...obj, [speed.interface]: speed }), {});
+		const { prev, curr, stepSize } = state;
+
+		const speeds = Array.from(calculateSpeed(prev, curr)).reduce((obj, speed) => ({ ...obj, [speed.interface]: speed }), {});
 		for (const { interface, received, transmitted } of Object.values(speeds)){
 			let row = displayWrapper.querySelector(`[data-interface="${interface}"]`);
 			if (!row) {
@@ -54,6 +69,27 @@ const debug = (() => {
 			trans.textContent = transmitted[0];
 			dl.textContent = received[1].toFixed(0);
 			up.textContent = transmitted[1].toFixed(0);
+
+			let line = chart.querySelector(`[data-interface="${interface}"]`)
+			if (!line) {
+				line = document.createElementNS("http://www.w3.org/2000/svg", 'polyline');
+				line.dataset.interface = interface;
+				line.setAttribute('fill', 'none');
+				line.setAttribute('stroke', 'blue');
+				chart.querySelector('#lines').appendChild(line);
+			}
+
+			const x = (line.hasAttribute('points') ? line.getAttribute('points').split(' ').length : 0) * stepSize;
+			const y = 200 - received[0];
+			let points = `${line.hasAttribute('points') ? line.getAttribute('points') + ' ' : ''}${x},${y}`;
+			if (x >= 400 + stepSize) {
+				points = points.split(' ').slice(1).map(point => {
+					let [x, y] = point.split(',').map(Number);
+					x -= stepSize;
+					return `${x},${y}`;
+				}).join(' ');
+			}
+			line.setAttribute('points', points)
 		}
 	}
 
@@ -64,10 +100,10 @@ const debug = (() => {
 					state.prev = data;
 					return;
 				} else {
-					state.prev = state.now || state.prev;
+					state.prev = state.curr || state.prev;
 				}
 
-				state.now = data;
+				state.curr = data;
 				return updateDisplay();
 			}).catch(error => {
 				console.error(error);
@@ -77,6 +113,6 @@ const debug = (() => {
 	}
 	poll();
 
-	const pollInterval = setInterval(poll, 1000);
+	let pollInterval = setInterval(poll, state.rate);
 	return { state, pollInterval };
 })();

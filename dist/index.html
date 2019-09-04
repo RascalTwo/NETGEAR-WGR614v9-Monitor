@@ -15,6 +15,25 @@
 					width: 90%;
 					margin: 0 auto;
 				}
+
+			#chart {
+				border: 1px dotted black; /* TODO - Remove temp border */
+				max-height: 75vh;
+				width: 100%;
+				margin: 0 auto;
+			}
+
+				#chart * {
+					stroke-width: 0.25
+				}
+
+				#chart line {
+					stroke: black;
+				}
+
+				#chart text {
+					font: normal 10px sans-serif;
+				}
 		</style>
 	</head>
 	<body>
@@ -29,10 +48,25 @@
 			<input id="password" name="password">
 
 			<label for="rate">Rate </label>
-			<input id="rate" type="number" min="0.1" step="0.1" value="1" name="rate" disabled>
+			<input id="rate" type="number" min="0.1" step="0.1" value="1" name="rate">
 
 			<button type="submit">Set</button>
 		</form>
+		<div>
+			<svg viewbox="-20 -20 430 230" id="chart">
+				<g id="lines">
+				</g>
+				<g>
+					<line x1="0" x2="0" y1="0" y2="200"></line>
+					<line x1="0" x2="400" y1="200" y2="200"></line>
+					<text x="-20" y="195">0</text>
+					<text x="-20" y="205">kB</text>
+					<text x="-20" y="0">1</text>
+					<text x="-20" y="10">mB</text>
+				</g>
+			</svg>
+			<label>Step Size: <input id="step-size" type="number" min="1" max="10" step="1" value="5" /></label>
+		</div>
 		<table>
 			<tr>
 				<th>Interface</th>
@@ -44,6 +78,7 @@
 			<tbody id="display-wrapper">
 			</tbody>
 		</table>
+		<button id="halt-button">Halt</button>
 		<script src="index.js"></script>
 	</body>
 </html>
