@@ -62,19 +62,40 @@ func fetchHTML(hostpath string, username string, password string) ([]byte, error
 	return bytes, nil
 }
 
+func isLAN(values []string) bool {
+	return strings.HasPrefix(values[0], "LAN")
+}
+
+func isActive(values []string) bool {
+	return !strings.Contains(strings.ToLower(values[1]), "link down")
+}
+
 func parseHTML(html string) (FullFrame, error) {
 	data := FullFrame{When: time.Now(), Interfaces: make(map[string]Row)}
 
+	// TODO - Look into combining rows regex with rowvalues regex
 	rows := findAllSubmatchGroups(`(?s)<tr>(.*?)</tr>`, html, 1)
 	data.Uptime = regexp.MustCompile(`(?s)<!>\s*(.*?)\s*?<!>`).FindStringSubmatch(rows[1])[1]
+
+	rowValues := make([][]string, 0)
+	for _, rawRow := range rows[3:] {
+		// TODO - Strip uptime strings
+		rowValues = append(rowValues, findAllSubmatchGroups(`(?s)<td.*?>.*?<span.*?>(.*?)</span>`, rawRow, 1))
+	}
 
 	lastIO := struct {
 		Transmitted IOInfo
 		Received    IOInfo
 		Collisions  int16
 	}{}
-	for _, row := range rows[3:] {
-		values := findAllSubmatchGroups(`(?s)<td.*?>.*?<span.*?>(.*?)</span>`, row, 1)
+	activeLANs := make(map[string]bool, 0)
+	for _, values := range rowValues {
+		if !isLAN(values) || !isActive(values) {
+			continue
+		}
+		activeLANs[values[0]] = true
+	}
+	for _, values := range rowValues {
 		if len(values) == 8 {
 			value, _ := strconv.ParseInt(values[2], 10, 32)
 			transInt := int32(value)
@@ -91,12 +112,12 @@ func parseHTML(html string) (FullFrame, error) {
 
 			// TODO - Don't ignore errors
 
-			if strings.HasPrefix(values[0], "LAN") {
-				lastIO.Transmitted.Count /= 4
-				lastIO.Transmitted.Speed /= 4
-				lastIO.Received.Count /= 4
-				lastIO.Received.Speed /= 4
-				lastIO.Collisions /= 4
+			if activeLANs[values[0]] {
+				lastIO.Transmitted.Count /= int32(len(activeLANs))
+				lastIO.Transmitted.Speed /= int32(len(activeLANs))
+				lastIO.Received.Count /= int32(len(activeLANs))
+				lastIO.Received.Speed /= int32(len(activeLANs))
+				lastIO.Collisions /= int16(len(activeLANs))
 			}
 		}
 
@@ -105,32 +126,37 @@ func parseHTML(html string) (FullFrame, error) {
 		if uptime == "--" {
 			uptime = ""
 		}
-		data.Interfaces[values[0]] = Row{values[1], lastIO.Transmitted, lastIO.Received, lastIO.Collisions, uptime}
+
+		if !isActive(values) {
+			data.Interfaces[values[0]] = Row{values[1], IOInfo{}, IOInfo{}, 0, uptime}
+		} else {
+			data.Interfaces[values[0]] = Row{values[1], lastIO.Transmitted, lastIO.Received, lastIO.Collisions, uptime}
+		}
 	}
 
 	return data, nil
 }
 
-func cacheOrFetch(filename string, fetch func() ([]byte, error)) (string, error) {
+func cacheOrFetch(filename string, fetch func() ([]byte, error)) ([]byte, error) {
 	if _, err := os.Stat(filename); os.IsExist(err) {
 		bytes, err := ioutil.ReadFile(filename)
 		if err != nil {
-			return "", err
+			return []byte{}, err
 		}
-		return string(bytes), nil
+		return bytes, nil
 
 	}
 	bytes, err := fetch()
 	if err != nil {
-		return "", err
+		return []byte{}, err
 	}
 
 	err = ioutil.WriteFile(filename, bytes, 0644)
 	if err != nil {
-		return "", err
+		return []byte{}, err
 	}
 
-	return string(bytes), nil
+	return bytes, nil
 }
 
 func collectData(ticker *time.Ticker, provideData func(data FullFrame), ip *string, username *string, password *string) {
